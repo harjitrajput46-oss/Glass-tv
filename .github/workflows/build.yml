@@ -1,0 +1,367 @@
+================================================================
+FILE: app/src/main/AndroidManifest.xml
+================================================================
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.iptv.glass">
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:label="GLASS TV"
+        android:icon="@mipmap/ic_launcher"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:name=".MainActivity"
+            android:screenOrientation="landscape"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity android:name=".AnimeActivity" />
+        <activity android:name=".MovieActivity" />
+    </application>
+</manifest>
+
+
+================================================================
+FILE: app/src/main/java/com/iptv/glass/MainActivity.java
+================================================================
+package com.iptv.glass;
+
+import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
+import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.View;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+
+import java.util.List;
+
+public class MainActivity extends Activity {
+
+    private LinearLayout rowApps;
+    private LinearLayout rowAnime;
+    private LinearLayout rowMovies;
+    private AppManager appManager;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        rowApps = (LinearLayout) findViewById(R.id.row_apps);
+        rowAnime = (LinearLayout) findViewById(R.id.row_anime);
+        rowMovies = (LinearLayout) findViewById(R.id.row_movies);
+        appManager = new AppManager(this);
+
+        loadInstalledApps();
+        addPlaceholderCard(rowAnime, "Anime Mini App", AnimeActivity.class);
+        addPlaceholderCard(rowMovies, "Movies", MovieActivity.class);
+    }
+
+    private void loadInstalledApps() {
+        PackageManager pm = getPackageManager();
+        Intent launcherIntent = new Intent(Intent.ACTION_MAIN);
+        launcherIntent.addCategory(Intent.CATEGORY_LAUNCHER);
+        List<ResolveInfo> apps = pm.queryIntentActivities(launcherIntent, 0);
+
+        for (final ResolveInfo ri : apps) {
+            final String pkg = ri.activityInfo.packageName;
+            if (pkg.equals(getPackageName())) continue;
+
+            TextView card = makeCard(ri.loadLabel(pm).toString());
+            card.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    Intent launch = getPackageManager().getLaunchIntentForPackage(pkg);
+                    if (launch != null) {
+                        appManager.markRecent(pkg);
+                        startActivity(launch);
+                    }
+                }
+            });
+            rowApps.addView(card);
+        }
+    }
+
+    private void addPlaceholderCard(LinearLayout row, String title, final Class<?> target) {
+        TextView card = makeCard(title);
+        card.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(MainActivity.this, target));
+            }
+        });
+        row.addView(card);
+    }
+
+    private TextView makeCard(String text) {
+        TextView card = new TextView(this);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(220, 120);
+        lp.setMargins(12, 0, 12, 0);
+        card.setLayoutParams(lp);
+        card.setBackgroundColor(getResources().getColor(R.color.glass));
+        card.setTextColor(getResources().getColor(R.color.text_primary));
+        card.setGravity(android.view.Gravity.CENTER);
+        card.setText(text);
+        card.setFocusable(true);
+        card.setFocusableInTouchMode(false);
+        card.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override
+            public void onFocusChange(View v, boolean hasFocus) {
+                v.setBackgroundColor(getResources().getColor(
+                        hasFocus ? R.color.focus : R.color.glass));
+            }
+        });
+        return card;
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        return super.onKeyDown(keyCode, event);
+    }
+}
+
+
+================================================================
+FILE: app/src/main/java/com/iptv/glass/AppManager.java
+================================================================
+package com.iptv.glass;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import java.util.HashSet;
+import java.util.Set;
+
+public class AppManager {
+
+    private static final String PREFS = "glass_apps";
+    private static final String KEY_FAVORITES = "favorites";
+    private static final String KEY_RECENT = "recent";
+
+    private final SharedPreferences prefs;
+
+    public AppManager(Context context) {
+        prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    public void markRecent(String pkg) {
+        Set<String> recent = new HashSet<>(prefs.getStringSet(KEY_RECENT, new HashSet<String>()));
+        recent.add(pkg);
+        prefs.edit().putStringSet(KEY_RECENT, recent).apply();
+    }
+
+    public Set<String> getFavorites() {
+        return new HashSet<>(prefs.getStringSet(KEY_FAVORITES, new HashSet<String>()));
+    }
+
+    public void toggleFavorite(String pkg) {
+        Set<String> favs = getFavorites();
+        if (!favs.remove(pkg)) favs.add(pkg);
+        prefs.edit().putStringSet(KEY_FAVORITES, favs).apply();
+    }
+}
+
+
+================================================================
+FILE: app/src/main/java/com/iptv/glass/SettingsManager.java
+================================================================
+package com.iptv.glass;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+public class SettingsManager {
+
+    private static final String PREFS = "glass_settings";
+    private static final String KEY_ANIMATIONS = "animations_enabled";
+
+    private final SharedPreferences prefs;
+
+    public SettingsManager(Context context) {
+        prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    public boolean isAnimationsEnabled() {
+        return prefs.getBoolean(KEY_ANIMATIONS, true);
+    }
+
+    public void setAnimationsEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_ANIMATIONS, enabled).apply();
+    }
+}
+
+
+================================================================
+FILE: app/src/main/java/com/iptv/glass/AnimeActivity.java
+================================================================
+package com.iptv.glass;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.TextView;
+
+public class AnimeActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        TextView tv = new TextView(this);
+        tv.setText("Anime Mini App: authorized free sources only. Coming soon.");
+        tv.setTextColor(0xFFFFFFFF);
+        tv.setBackgroundColor(0xFF0B0B12);
+        tv.setTextSize(24);
+        tv.setPadding(48, 48, 48, 48);
+        setContentView(tv);
+    }
+}
+
+
+================================================================
+FILE: app/src/main/java/com/iptv/glass/MovieActivity.java
+================================================================
+package com.iptv.glass;
+
+import android.app.Activity;
+import android.os.Bundle;
+import android.widget.TextView;
+
+public class MovieActivity extends Activity {
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        TextView tv = new TextView(this);
+        tv.setText("Movies: authorized free sources only. Coming soon.");
+        tv.setTextColor(0xFFFFFFFF);
+        tv.setBackgroundColor(0xFF0B0B12);
+        tv.setTextSize(24);
+        tv.setPadding(48, 48, 48, 48);
+        setContentView(tv);
+    }
+}
+
+
+================================================================
+FILE: app/src/main/res/layout/activity_main.xml
+================================================================
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:padding="32dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/banner_title"
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:background="@color/glass"
+            android:gravity="center_vertical"
+            android:padding="24dp"
+            android:text="@string/app_name"
+            android:textColor="@color/text_primary"
+            android:textSize="36sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/section_my_apps"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp" />
+
+        <LinearLayout
+            android:id="@+id/row_apps"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/section_anime"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp" />
+
+        <LinearLayout
+            android:id="@+id/row_anime"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:orientation="horizontal" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/section_movies"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp" />
+
+        <LinearLayout
+            android:id="@+id/row_movies"
+            android:layout_width="match_parent"
+            android:layout_height="140dp"
+            android:orientation="horizontal" />
+    </LinearLayout>
+</ScrollView>
+
+
+================================================================
+FILE: app/src/main/res/values/colors.xml
+================================================================
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="background">#0B0B12</color>
+    <color name="glass">#33FFFFFF</color>
+    <color name="text_primary">#FFFFFF</color>
+    <color name="text_secondary">#B3FFFFFF</color>
+    <color name="focus">#FFFFFFFF</color>
+</resources>
+
+
+================================================================
+FILE: app/src/main/res/values/strings.xml
+================================================================
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GLASS TV</string>
+    <string name="section_my_apps">My Apps</string>
+    <string name="section_anime">Anime</string>
+    <string name="section_movies">Movies</string>
+    <string name="section_favorites">Favorites</string>
+    <string name="section_recent">Recently Opened</string>
+    <string name="section_settings">Settings</string>
+</resources>
+
+
+================================================================
+FILE: app/src/main/res/values/styles.xml
+================================================================
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.Holo">
+        <item name="android:windowBackground">@color/background</item>
+    </style>
+</resources>
+
+
